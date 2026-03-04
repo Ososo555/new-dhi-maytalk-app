@@ -26,7 +26,7 @@ let questionCount = 1;
 // 保存済みデータを取得
 const savedEntry = localStorage.getItem(today);
 
-/* 質問一覧（カテゴリ１：今日を振り返る系質問）*/
+/* 質問一覧（固定セット方式） */
 const CATEGORY_1 = [
   "今日１日で１番記憶に残っていることは？",
   "明日待ち受けている予定・出来事は何？",
@@ -44,15 +44,14 @@ const CATEGORY_2 = [
 ];
 
 const CATEGORY_3 = [
-  "その出来事を踏まえて考えた/学んだことは何？",
+  "その出来事を踏まえて考えた/学んだことはある？",
   "明日に向けてどんな準備してる/する必要がある？",
   "それに取り組んでいる時の自分の感情は？",
   "その出来事の前と後で自分にどんな変化があった？",
   "その人のどんなところを尊敬する/憧れる？"
 ];
 
-// ========== 質問セット方式 ==========
-
+// ========== 質問セット方式（n番目固定） ==========
 // n番目の要素を各カテゴリから取ってきてセットを構成
 function getQuestionSetByIndex(n) {
   if (n < 0 || n >= CATEGORY_1.length) {
@@ -85,7 +84,7 @@ let questionSets = [];        // 実際の質問セット [ [Q1, Q2, Q3], [Q4, Q
 let draftAnswers = [];        // 入力の下書き（フラット配列）
 let isSavedToday = false;
 
-/* 質問をランダムにセレクト */
+/* 質問セットをセレクト */
 if (savedEntry) {
   // すでに今日の分が保存されている場合
   const parsed = JSON.parse(savedEntry);
@@ -191,21 +190,24 @@ function renderHistory() {
 /* 画面描画 */
 function renderHome() {
   const content = document.querySelector('#content');
+  
+  // セットを展開してフラット化した質問リスト
+  const allQuestions = questionSets.flat();
+  
   content.innerHTML = `
       <h1>今日の質問</h1>
 
-      ${currentQuestions.map((q, i) => `
+      ${allQuestions.map((q, i) => `
         <section class="card">
           <p class="question">Q${i + 1}. ${q}</p>
           <textarea data-index="${i}" placeholder="ここに入力">${draftAnswers[i] ?? ''}</textarea>
-
         </section>
       `).join('')}
 
       <div class="actions">
         <button id="add"
-          ${currentQuestions.length >= 3 || isSavedToday ? 'disabled' : ''}>
-          質問を増やす
+          ${questionSets.length >= 3 || isSavedToday ? 'disabled' : ''}>
+          次のセットを追加（+3問）
         </button>
         <button id="save">保存</button>
       </div>
@@ -219,40 +221,36 @@ function bindEvents() {
   const addButton = document.querySelector('#add');
   const saveButton = document.querySelector('#save');
 
-  // 追加：既存を固定したまま、次のカテゴリだけ足す
+  // 追加：新しいセット（インデックス 3～5 から選出）を足す
   addButton.addEventListener('click', () => {
     captureDraft();
-
-    if (currentQuestions.length === 1) {
-      currentQuestions.push(pickOne(CATEGORY_2)); // Q2だけ追加
-    } else if (currentQuestions.length === 2) {
-      currentQuestions.push(pickOne(CATEGORY_3)); // Q3だけ追加
-    } else {
-      return; // 3問以上にはしない
-    }
-    renderApp(); // 再描画（Q1/Q2はそのまま）
+    const newIndex = generateAdditionalSetIndex();
+    questionSetIndices.push(newIndex);
+    questionSets.push(getQuestionSetByIndex(newIndex));
+    renderApp(); // 再描画
   });
 
-  // 保存：表示されている質問数ぶんだけ保存
+  // 保存：すべてのセットと回答を保存
   saveButton.addEventListener('click', () => {
     captureDraft();
     const textareas = [...document.querySelectorAll('textarea')];
+    const allQuestions = questionSets.flat();
 
     const answers = textareas.map((ta, i) => ({
       index: i + 1,
-      category: i + 1,            // 1,2,3（あとで文字列にしてもOK）
-      question: currentQuestions[i],
+      question: allQuestions[i],
       answer: ta.value
     }));
 
     const entry = {
       date: today,
-      questionCount: currentQuestions.length,
+      questionCount: textareas.length,
+      setIndices: questionSetIndices,  // インデックス配列を保存
       answers
     };
 
     localStorage.setItem(today, JSON.stringify(entry));
-    draftAnswers = answers.map(a => a.answer);  // 画面復元用の下書きも、保存内容で更新
+    draftAnswers = answers.map(a => a.answer);
     isSavedToday = true;
     
     const status = document.querySelector('#status');
